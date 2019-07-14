@@ -2,7 +2,6 @@ package check
 
 import (
 	"context"
-	"github.com/qjex/ursus/gen"
 	"golang.org/x/sync/semaphore"
 	"net"
 	"strconv"

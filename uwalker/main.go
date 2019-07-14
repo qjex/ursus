@@ -3,8 +3,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"github.com/qjex/ursus/check"
-	"github.com/qjex/ursus/gen"
 	log "github.com/sirupsen/logrus"
 	"os"
 	"runtime"
