@@ -64,7 +64,7 @@ func main() {
 		log.Fatal(err)
 	}
 	s5 := check.Checker(&check.Socks5Checker{})
-	pool := check.NewCheckerPool(s5, gen.NewGenerator(ips), &c)
+	pool := check.NewPoolChecker(s5, gen.NewGenerator(ips), &c)
 
 	for proxy := range pool.Start(context.Background()) {
 		log.Info(proxy)
