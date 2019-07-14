@@ -3,13 +3,13 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	log "github.com/sirupsen/logrus"
 	"os"
 	"runtime"
 	"syscall"
-
-	"github.com/micro/go-config"
-	"github.com/micro/go-config/source/file"
+	"uwalker/check"
+	"uwalker/gen"
 )
 
 func init() {
@@ -30,6 +30,18 @@ func readCIDR(path string) ([]string, error) {
 		lines = append(lines, scanner.Text())
 	}
 	return lines, scanner.Err()
+}
+
+func readConfig() check.Config {
+	file, _ := os.Open("config.json")
+	defer file.Close()
+	decoder := json.NewDecoder(file)
+	c := check.Config{}
+	err := decoder.Decode(&c)
+	if err != nil {
+		log.Fatal("Error decoding config: ", err)
+	}
+	return c
 }
 
 func main() {
@@ -53,10 +65,8 @@ func main() {
 	}
 	log.Infof("Current fd limit: %d", rLimit.Cur)
 
-	var c check.Config
-	conf := config.NewConfig()
-	conf.Load(file.NewSource(file.WithPath("config.json")))
-	conf.Scan(&c)
+	c := readConfig()
+
 	ips, err := readCIDR(c.CDIRfile)
 	if err != nil {
 		log.Fatal(err)

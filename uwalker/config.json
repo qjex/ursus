@@ -1,6 +1,6 @@
 {
     "test-host": "google.com:80",
     "ports": [8080, 3128, 1080, 3119],
-    "workers": 5000,
+    "workers": 10000,
     "cdir-file": "cidrs"
 }

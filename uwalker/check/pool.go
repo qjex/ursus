@@ -6,6 +6,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"uwalker/gen"
 )
 
 type PoolChecker struct {
