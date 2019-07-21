@@ -11,5 +11,5 @@ session::session(boost::asio::io_context& io_context, boost::asio::ip::tcp::sock
 
 void session::start()
 {
-    p.add_nxt_connection();
+    //    p.add_nxt_connection();
 }
