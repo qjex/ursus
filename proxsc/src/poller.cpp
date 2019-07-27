@@ -1,8 +1,6 @@
 #include "poller.h"
 #include "session.h"
 
-const int CAPACITY = 250;
-
 poller::poller(boost::asio::io_context& io_context, const generator& gen)
     : io_context(io_context)
     , gen(gen)
@@ -11,9 +9,9 @@ poller::poller(boost::asio::io_context& io_context, const generator& gen)
 {
 }
 
-void poller::run()
+void poller::run(size_t cap)
 {
-    for (size_t i = 0; i < CAPACITY && gen_it != gen.end(); ++i) {
+    for (size_t i = 0; i < cap && gen_it != gen.end(); ++i) {
         add_nxt_connection();
     }
     io_context.run();
@@ -21,6 +19,7 @@ void poller::run()
 
 void poller::add_nxt_connection()
 {
+    std::cerr << sockets.size() << ' ' << timers.size() << ' ' << sessions.size() << std::endl;
     if (gen_it == gen.end()) {
         return;
     }
@@ -35,29 +34,36 @@ void poller::add_nxt_connection()
 
     t.expires_after(std::chrono::seconds(2));
     t.async_wait(std::bind(&poller::check_deadline, this, s, std::placeholders::_1));
-    std::cerr << "adding: " << (*gen_it) << std::endl;
+    //    std::cerr << "adding: " << (*gen_it) << std::endl;
     s->async_connect(endpoint, [s, this](const boost::system::error_code& error) {
         if (error) {
+            if (error.message()[0] == 'O' || error.message()[0] == 'C') {
+                return;
+            }
             std::cerr << "Error: " << error.message() << std::endl;
             return;
         }
         std::cerr << "Connected: " << (*s).remote_endpoint().address().to_string() << std::endl;
         timers[s]->expires_at(steady_timer::time_point::max());
-        std::unique_ptr<session> session_ptr = std::make_unique<session>(io_context, std::move(*s), *this);
-        auto& session = *session_ptr;
-        sessions[&session] = std::move(session_ptr);
-        session.start();
+        sessions[s] = std::make_unique<session>(io_context, s, *this);
+        sessions[s]->start();
     });
     ++gen_it;
 }
 
 void poller::check_deadline(boost::asio::ip::tcp::socket* socket_ptr, const boost::system::error_code& error)
 {
+    timers.erase(socket_ptr);
     if (error) {
-        std::cerr << "Error in timer: " << error.message() << std::endl;
-        timers.erase(socket_ptr);
         return;
     }
-    std::cerr << "Erasing socket" << std::endl;
+    //    std::cerr << "Erasing socket" << std::endl;
+    sockets.erase(socket_ptr);
+    add_nxt_connection();
+}
+
+void poller::end_session(boost::asio::ip::tcp::socket* socket_ptr)
+{
+    sessions.erase(socket_ptr);
     sockets.erase(socket_ptr);
 }
