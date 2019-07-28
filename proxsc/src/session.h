@@ -36,6 +36,8 @@ private:
     poller& p;
     session_state state;
     std::array<unsigned char, 18> buf;
+    std::string host;
+    bool stoped;
 };
 
 #endif // SESSION_H

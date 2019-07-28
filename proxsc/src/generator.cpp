@@ -1,5 +1,6 @@
 #include "generator.h"
 #include <array>
+#include <iostream>
 #include <string>
 
 generator::generator(const std::vector<std::string>& a)
@@ -68,6 +69,7 @@ generator::iterator& generator::iterator::operator++()
     } else {
         k = 0;
         pos++;
+        std::cerr << "new block: " << pos << std::endl;
         if (pos < ptr->data.size()) {
             mx = (1ll << (32 - ptr->data[pos].second)) - 1;
         }

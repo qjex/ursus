@@ -12,7 +12,7 @@ public:
     poller(boost::asio::io_context& io_context, const generator& gen);
     void run(size_t);
     void add_nxt_connection();
-    void check_deadline(boost::asio::ip::tcp::socket* socket_ptr, const boost::system::error_code& error);
+    void check_deadline(boost::asio::ip::tcp::socket* socket_ptr, const std::string& host, const boost::system::error_code& error);
     void end_session(boost::asio::ip::tcp::socket* socket_ptr);
 
 private:
