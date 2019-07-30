@@ -5,7 +5,7 @@
 session::session(boost::asio::io_context& io_context, boost::asio::ip::tcp::socket* s, poller& p)
     : io_context(io_context)
     , s(s)
-    , timer(io_context)
+    , timer(std::make_shared<boost::asio::steady_timer>(io_context))
     , p(p)
     , host(utils::to_string(*s))
     , stoped(false)
@@ -21,7 +21,7 @@ void session::start()
 void session::handle()
 {
     std::cerr << utils::to_string(*s) << " state=" << static_cast<int>(state) << std::endl;
-    timer.cancel();
+    timer->expires_at(boost::asio::steady_timer::time_point::max());
     switch (state) {
     case session_state::SEND_GREETING:
         send_greetings();
@@ -128,20 +128,23 @@ void session::read_response()
 
 void session::set_deadline(int secs)
 {
-    timer.expires_after(std::chrono::seconds(secs));
-    timer.async_wait([this](const boost::system::error_code& error) {
+    timer->expires_after(std::chrono::seconds(secs));
+    timer->async_wait([this, t = timer](const boost::system::error_code& error) {
         if (error) {
             return;
         }
-        std::cerr << "in deadline: " << utils::to_string(*s) << std::endl;
+        if (t->expiry() == boost::asio::steady_timer::time_point::max()) {
+            std::cerr << "in deadline: " << utils::to_string(*s) << std::endl;
+            return;
+        }
+        //        s->close();
         stoped = true;
     });
 }
 
 void session::close()
 {
-    std::cerr << "closing session for socket: " << utils::to_string(*s) << std::endl;
-    timer.cancel();
+    timer->expires_at(boost::asio::steady_timer::time_point::max());
     p.add_nxt_connection();
     p.end_session(s);
 }

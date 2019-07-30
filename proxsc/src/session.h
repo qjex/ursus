@@ -32,7 +32,7 @@ private:
 private:
     boost::asio::io_context& io_context;
     boost::asio::ip::tcp::socket* s;
-    boost::asio::steady_timer timer;
+    std::shared_ptr<boost::asio::steady_timer> timer;
     poller& p;
     session_state state;
     std::array<unsigned char, 18> buf;
