@@ -1,0 +1,8 @@
+{
+  "control_address": "127.0.0.1:34231",
+  "http_address": "127.0.0.1:8080",
+  "mongo": {
+    "user": "user",
+    "passwd": "passwd"
+  }
+}
