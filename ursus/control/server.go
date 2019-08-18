@@ -6,12 +6,17 @@ import (
 	"net"
 	"sync"
 	"time"
+	"ursus/store"
 )
 
 const (
-	hbAck    = 0x1
 	hbRcv    = 0x0
+	hbAck    = 0x1
 	proxyRcv = 0x2
+)
+
+const (
+	socks5 = 0x1
 )
 
 var ackBuf = []byte{hbAck}
@@ -27,9 +32,10 @@ type srv struct {
 	tasks   chan net.Conn
 	workers int
 	wg      sync.WaitGroup
+	store   store.Store
 }
 
-func NewServer(bind string, workers int) (Server, error) {
+func NewServer(bind string, workers int, store store.Store) (Server, error) {
 	l, err := net.Listen("tcp4", bind)
 	if err != nil {
 		return nil, errors.Wrap(err, "error starting listening socket")
@@ -42,6 +48,7 @@ func NewServer(bind string, workers int) (Server, error) {
 		tasks:   tasks,
 		workers: workers,
 		wg:      sync.WaitGroup{},
+		store:   store,
 	}, nil
 }
 
@@ -106,13 +113,32 @@ func (s *srv) handle(conn net.Conn) {
 			if cnt != 8 {
 				return
 			}
-
+			var proto string
+			switch buf[1] {
+			case socks5:
+				proto = "socks5"
+			default:
+				log.Printf("Unknown proxy protocol %s", buf[1])
+				return
+			}
+			ip := net.IP(buf[2:6])
+			port := uint16(16*buf[6] + buf[6])
+			proxy := store.Proxy{
+				Addr:    ip,
+				Port:    port,
+				Proto:   proto,
+				Updated: time.Now(),
+			}
+			err := s.store.Save(proxy)
+			if err != nil {
+				log.Printf("Error saving proxy %v, %s", proxy, err)
+			}
 		default:
 			return
 		}
 		err = sendAck(conn)
 		if err != nil {
-			log.Printf("Error writing hearbeat %s", err)
+			log.Printf("Error writing heartbeat %s", err)
 		}
 
 	}
