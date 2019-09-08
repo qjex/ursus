@@ -3,6 +3,9 @@ module ursus
 go 1.12
 
 require (
+	github.com/go-chi/chi v4.0.2+incompatible
+	github.com/go-chi/render v1.0.1
+	github.com/go-pkgz/lgr v0.6.3
 	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/golang/snappy v0.0.1 // indirect
 	github.com/pkg/errors v0.8.1

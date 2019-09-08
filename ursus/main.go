@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime"
 	"syscall"
+	"ursus/api"
 	"ursus/control"
 	"ursus/store"
 )
@@ -35,7 +36,7 @@ func setLimit() {
 	}
 	rLimit.Cur = rLimit.Max
 	if runtime.GOOS == "darwin" {
-		rLimit.Cur = 12000
+		rLimit.Cur = 10000
 	}
 	if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit); err != nil {
 		panic(err)
@@ -47,16 +48,16 @@ func setLimit() {
 func main() {
 	setLimit()
 	config := readConfig()
-	store, err := store.NewMongoStore(&config.Mongo)
+	s, err := store.NewMongoStore(&config.Mongo)
 	if err != nil {
 		log.Fatal("Couldn't create mongo connection: ", err)
 	}
-	server, err := control.NewServer(config.ControlAddress, 1, store)
+	server, err := control.NewServer(config.ControlAddress, 1, s)
 
 	if err != nil {
 		log.Fatal("Couldn't create control server: ", err)
 	}
 	server.Start()
-	server.Stop()
-	store.Close()
+	rest := api.NewRest(s)
+	rest.Run(3000)
 }

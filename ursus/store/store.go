@@ -1,12 +1,14 @@
 package store
 
 import (
+	"context"
 	"net"
 	"time"
 )
 
-type Store interface {
-	Save(proxy Proxy) error
+type ProxyStore interface {
+	Save(ctx context.Context, proxy Proxy) error
+	FindAll(ctx context.Context, page, pageSize int64) ([]Proxy, error)
 	Close()
 }
 

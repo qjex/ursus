@@ -1,6 +1,7 @@
 package control
 
 import (
+	"context"
 	"github.com/pkg/errors"
 	"log"
 	"net"
@@ -32,10 +33,10 @@ type srv struct {
 	tasks   chan net.Conn
 	workers int
 	wg      sync.WaitGroup
-	store   store.Store
+	store   store.ProxyStore
 }
 
-func NewServer(bind string, workers int, store store.Store) (Server, error) {
+func NewServer(bind string, workers int, store store.ProxyStore) (Server, error) {
 	l, err := net.Listen("tcp4", bind)
 	if err != nil {
 		return nil, errors.Wrap(err, "error starting listening socket")
@@ -129,7 +130,7 @@ func (s *srv) handle(conn net.Conn) {
 				Proto:   proto,
 				Updated: time.Now(),
 			}
-			err := s.store.Save(proxy)
+			err := s.store.Save(context.Background(), proxy)
 			if err != nil {
 				log.Printf("Error saving proxy %v, %s", proxy, err)
 			}

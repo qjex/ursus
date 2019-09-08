@@ -2,7 +2,8 @@
   "control_address": "127.0.0.1:34231",
   "http_address": "127.0.0.1:8080",
   "mongo": {
-    "user": "user",
-    "passwd": "passwd"
+    "user": "qjex",
+    "passwd": "d}U)9GqYprJj",
+    "host": "172.18.0.2"
   }
 }
