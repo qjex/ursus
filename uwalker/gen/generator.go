@@ -34,7 +34,6 @@ func (g *Generator) Ips(ctx context.Context) chan net.IP {
 				case out <- dup:
 				}
 			}
-
 		}
 	}()
 	return out

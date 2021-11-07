@@ -27,6 +27,14 @@ func TestGenerator_Ips(t *testing.T) {
 			args: struct{ ctx context.Context }{ctx: context.Background()},
 			want: 65536,
 		},
+		{
+			name: "single",
+			fields: fields{
+				cidrs: []string{"1.1.1.1/32"},
+			},
+			args: struct{ ctx context.Context }{ctx: context.Background()},
+			want: 1,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
