@@ -13,6 +13,7 @@ func TestGenerator_Ips(t *testing.T) {
 	type args struct {
 		ctx context.Context
 	}
+	blacklist := []string{"192.168.0.1/16", "10.20.30.1/24"}
 	tests := []struct {
 		name   string
 		fields fields
@@ -35,11 +36,20 @@ func TestGenerator_Ips(t *testing.T) {
 			args: struct{ ctx context.Context }{ctx: context.Background()},
 			want: 1,
 		},
+		{
+			name: "blacklist intersection",
+			fields: fields{
+				cidrs: []string{"10.20.0.0/16", "192.168.10.1/24"},
+			},
+			args: struct{ ctx context.Context }{ctx: context.Background()},
+			want: 65280,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := &Generator{
-				cidrs: tt.fields.cidrs,
+			g, err := NewGenerator(tt.fields.cidrs, blacklist)
+			if err != nil {
+				t.Fatal(err)
 			}
 			got := chanSz(g.Ips(tt.args.ctx))
 			if int32(got) != tt.want {
