@@ -73,9 +73,6 @@ func NewScanner(ip net.IP, router routing.Router) (*scanner, error) {
 	if err := handle.SetSnapLen(65536); err != nil {
 		return nil, err
 	}
-	//if err := handle.SetBufferSize(100 * 1000000); err != nil {
-	//	return nil, err
-	//}
 	if s.handle, err = handle.Activate(); err != nil {
 		return nil, err
 	}

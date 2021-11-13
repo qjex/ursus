@@ -8,6 +8,8 @@ import (
 	"uwalker/scan"
 )
 
+const timeout = 20 * time.Second
+
 type connectionKey struct {
 	ip   string
 	port uint16
@@ -36,12 +38,14 @@ type Limiter interface {
 }
 
 type connection struct {
-	seq          uint32
-	unacked      []byte
+	seq          uint32 // our sequence
+	unacked      []byte // bytes that are currently not acknowledged by the second party
 	partyNextSeq uint32
 
 	lstPacket time.Time
 	state     ConnectionState
+
+	cancelTimer *time.Timer
 }
 
 func (c *connection) ack(count int) {
@@ -64,7 +68,8 @@ type Conductor struct {
 	ips   <-chan net.IP
 	ports []uint16
 
-	packets <-chan *scan.Packet
+	packets  <-chan *scan.Packet
+	timeouts chan connectionKey
 
 	s Sender
 	l Limiter
@@ -155,7 +160,7 @@ loop:
 			})
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(500 * time.Second):
+		case <-time.After(5 * time.Second):
 			return nil
 		}
 	}
@@ -173,28 +178,54 @@ func (c *Conductor) send(sender func() error) {
 	}
 }
 
-func (c *Conductor) terminate(p *scan.Packet, k connectionKey, conn *connection) {
-	//var termSeq uint32 = 0
-	if conn != nil {
-		//termSeq = conn.seq
-		delete(c.connections, k)
+func (c *Conductor) terminate(ip net.IP, seq uint32, k connectionKey) {
+	delete(c.connections, k)
+	_ = c.s.Terminate(ip, k.port, seq)
+}
+
+func (c *Conductor) newConnection(k connectionKey, partySeq uint32) *connection {
+	conn := &connection{
+		0,
+		nil,
+		partySeq,
+		time.Now(),
+		c.stateBuilder(),
+		time.AfterFunc(timeout, func() {
+			c.timeouts <- k
+		}),
 	}
-	_ = c.s.Terminate(p.Addr, k.port, p.Ack)
+	c.connections[k] = conn
+	return conn
 }
 
 func (c *Conductor) Collect() {
-	for p := range c.packets {
-		k := connectionKey{
-			p.Addr.String(),
-			p.Port,
+	for {
+		select {
+		case p, more := <-c.packets:
+			if !more {
+				break
+			}
+			k := connectionKey{
+				p.Addr.String(),
+				p.Port,
+			}
+			conn := c.connections[k]
+			res := c.handle(p, k, conn)
+			if res == nil {
+				c.terminate(p.Addr, p.Ack, k)
+				continue
+			}
+			c.txQ <- res
+		case k, more := <-c.timeouts:
+			if !more {
+				break
+			}
+			conn := c.connections[k]
+			if conn != nil && !conn.lstPacket.Add(timeout).After(time.Now()) {
+				log.Printf("closed by timeout %s:%d", k.ip, k.port)
+				c.terminate(net.ParseIP(k.ip), conn.seq, k)
+			}
 		}
-		conn := c.connections[k]
-		res := c.handle(p, k, conn)
-		if res == nil {
-			c.terminate(p, k, conn)
-			continue
-		}
-		c.txQ <- res
 	}
 }
 
@@ -202,60 +233,58 @@ func (c *Conductor) handle(p *scan.Packet, k connectionKey, conn *connection) *t
 	if p.Done {
 		return nil
 	}
+	if conn == nil && !p.Start {
+		return nil // Connection state lost or deleted
+	}
 	if conn == nil {
-		if !p.Start {
-			// Connection state lost or deleted
-			return nil
-		}
-		conn = &connection{
-			0,
-			nil,
-			p.Seq,
-			time.Now(),
-			c.stateBuilder(),
-		}
-		c.connections[k] = conn
+		conn = c.newConnection(k, p.Seq)
 	} else {
-		if p.Start {
-			return conn.prepRes(p)
+		if p.Start { // duplicate syn-ack
+			return conn.toRes(p)
 		}
+		conn.lstPacket = time.Now()
 	}
-	acked := p.Ack - conn.seq
-	conn.ack(int(acked))
-	if conn.partyNextSeq < p.Seq {
-		log.Printf("Reordering detected for %s:%d", k.ip, k.port)
-		return conn.prepRes(p)
+	conn.cancelTimer.Reset(timeout)
+	return conn.handle(p)
+}
+
+func (c *connection) handle(p *scan.Packet) *txReq {
+	acked := p.Ack - c.seq
+	c.ack(int(acked))
+	if c.partyNextSeq < p.Seq {
+		log.Printf("Reordering detected for %s:%d", p.Addr.String(), p.Port)
+		return c.toRes(p)
 	}
-	if conn.partyNextSeq > p.Seq {
-		log.Printf("Unexpected party seq for %s:%d. Killing the connection", k.ip, k.port)
+	if c.partyNextSeq > p.Seq {
+		log.Printf("Unexpected party seq for %s:%d. Killing the connection", p.Addr.String(), p.Port)
 		return nil
 	}
 	var res []byte
 	var read int
 	var finished bool
 	if p.Start {
-		res = conn.state.Init()
+		res = c.state.Init()
 	} else if p.Data != nil {
-		res, read, finished = conn.state.Read(p.Data)
+		res, read, finished = c.state.Read(p.Data)
 		if finished {
-			log.Printf("!!!Connection finished %s:%d!!!", p.Addr.String(), p.Port)
+			log.Printf("Connection finished %s:%d", p.Addr.String(), p.Port)
 			return nil
 		}
 		if res == nil && read == 0 {
 			return nil
 		}
 	}
-	conn.unacked = append(conn.unacked, res...)
+	c.unacked = append(c.unacked, res...)
 
 	if p.Start {
 		read++ // syn contributes to the sequence
 	}
 	toAck := p.Seq + uint32(read)
-	conn.partyNextSeq = toAck
-	return conn.prepRes(p)
+	c.partyNextSeq = toAck
+	return c.toRes(p)
 }
 
-func (c *connection) prepRes(p *scan.Packet) *txReq {
+func (c *connection) toRes(p *scan.Packet) *txReq {
 	return &txReq{
 		data: c.unacked,
 		addr: p.Addr,
