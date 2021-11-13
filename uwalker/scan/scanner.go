@@ -218,7 +218,9 @@ func (s *scanner) send(l ...gopacket.SerializableLayer) error {
 	if err := gopacket.SerializeLayers(s.buf, s.opts, l...); err != nil {
 		return err
 	}
-	return s.handle.WritePacketData(s.buf.Bytes())
+	c := make([]byte, len(s.buf.Bytes()))
+	copy(c, s.buf.Bytes())
+	return s.handle.WritePacketData(c)
 }
 
 func (s *scanner) getHwAddr(arpIpDst net.IP) (net.HardwareAddr, error) {
