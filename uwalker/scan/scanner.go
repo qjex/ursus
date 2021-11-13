@@ -8,7 +8,7 @@ import (
 	"github.com/google/gopacket/pcap"
 	"github.com/google/gopacket/routing"
 	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
+	"log"
 	"net"
 	"time"
 )
@@ -67,7 +67,7 @@ func NewScanner(ip net.IP, router routing.Router) (*scanner, error) {
 	if err := handle.SetPromisc(true); err != nil {
 		return nil, err
 	}
-	if err := handle.SetTimeout(pcap.BlockForever); err != nil {
+	if err := handle.SetTimeout(5 * time.Second); err != nil {
 		return nil, err
 	}
 	if err := handle.SetSnapLen(65536); err != nil {
@@ -84,11 +84,11 @@ func NewScanner(ip net.IP, router routing.Router) (*scanner, error) {
 		return nil, errors.Wrapf(err, "error obtaining the MAC of the router %s", gw.String())
 	}
 	s.routerHwaddr = routerHwaddr
-	s.tcpTemplate = createTemplate(s.iface.HardwareAddr, s.routerHwaddr, s.src, s.srcPort)
+	s.tcpTemplate = createTemplate(s.iface.HardwareAddr, s.routerHwaddr, s.src)
 	return s, nil
 }
 
-func createTemplate(srcHw, dstHw net.HardwareAddr, src net.IP, srcPort uint16) tcpTemplate {
+func createTemplate(srcHw, dstHw net.HardwareAddr, src net.IP) tcpTemplate {
 	return tcpTemplate{
 		eth: layers.Ethernet{
 			SrcMAC:       srcHw,
@@ -157,7 +157,7 @@ func (s *scanner) ProbeData(dst net.IP, port uint16, seq, ack uint32, data []byt
 	return nil
 }
 
-func (s *scanner) Receive(ctx context.Context) <-chan *Packet {
+func (s *scanner) Packets(ctx context.Context) <-chan *Packet {
 	out := make(chan *Packet)
 	go func() {
 	loop:
@@ -208,6 +208,7 @@ func (s *scanner) Receive(ctx context.Context) <-chan *Packet {
 				}
 			}
 		}
+		log.Println("scanner closed")
 		close(out)
 	}()
 	return out

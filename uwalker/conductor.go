@@ -127,7 +127,7 @@ func (c *Conductor) Transmit(ctx context.Context) error {
 			}
 		}
 	}()
-	defer log.Println("Stopping transmitter")
+	defer log.Println("transmitting routine stopped")
 loop:
 	for {
 		select { // prioritize connections handling over connection init
@@ -199,11 +199,12 @@ func (c *Conductor) newConnection(k connectionKey, partySeq uint32) *connection 
 }
 
 func (c *Conductor) Collect() {
+loop:
 	for {
 		select {
 		case p, more := <-c.packets:
 			if !more {
-				break
+				break loop
 			}
 			k := connectionKey{
 				p.Addr.String(),
@@ -218,7 +219,7 @@ func (c *Conductor) Collect() {
 			c.txQ <- res
 		case k, more := <-c.timeouts:
 			if !more {
-				break
+				break loop
 			}
 			conn := c.connections[k]
 			if conn != nil && !conn.lstPacket.Add(timeout).After(time.Now()) {

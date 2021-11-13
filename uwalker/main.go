@@ -3,78 +3,161 @@ package main
 import (
 	"bufio"
 	"context"
-	"encoding/json"
-	log "github.com/sirupsen/logrus"
+	_ "embed"
+	"github.com/jessevdk/go-flags"
+	"github.com/pkg/errors"
+	"io"
+	"log"
+	"net"
 	"os"
-	"runtime"
+	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
-	"uwalker/check"
+	"uwalker/banner"
 	"uwalker/gen"
+	"uwalker/limiter"
+	"uwalker/router"
+	"uwalker/scan"
 )
 
-func init() {
-	log.SetLevel(log.InfoLevel)
-	log.SetFormatter(&log.TextFormatter{})
-}
+//go:embed static/excludes
+var defaultBlacklist string
 
-func readCIDR(path string) ([]string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
+func readCIDR(r io.Reader) ([]string, error) {
 	var lines []string
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())
 	}
 	return lines, scanner.Err()
 }
 
-func readConfig() check.Config {
-	file, _ := os.Open("config.json")
-	defer file.Close()
-	decoder := json.NewDecoder(file)
-	c := check.Config{}
-	err := decoder.Decode(&c)
-	if err != nil {
-		log.Fatal("Error decoding config: ", err)
+var opts struct {
+	TestHost  string `long:"test-host" default:"google.com:80"`
+	Subnet    string `short:"s" description:"Subnet to scan, e.g 192.168.0.1/24"`
+	Cidrs     string `short:"f" description:"File with subnets to scan"`
+	Ports     string `short:"p" description:"Ports to scan, e.g comma separated \"2055,2056,1999\" or ranges \"2055-2059,1999\"" required:"true"`
+	BlackList string `short:"b" description:"Specifies file with excluded subnets from scanning in the same format as the subnets for scanning. If it is not specified, the default one would be used"`
+	Rate      uint32 `short:"r" description:"Max probing rate in packet/s" default:"100"`
+}
+
+func parsePorts(p string) ([]uint16, error) {
+	conv := func(r string) (uint16, error) {
+		port, err := strconv.Atoi(r)
+		if err != nil {
+			return 0, errors.Errorf("invalid port %s format", r)
+		}
+		return uint16(port), nil
 	}
-	return c
+	ports := make([]uint16, 0)
+	ranges := strings.Split(p, ",")
+	for _, r := range ranges {
+		if !strings.Contains(r, "-") {
+			// single
+			port, err := conv(r)
+			if err != nil {
+				return nil, err
+			}
+			ports = append(ports, port)
+			continue
+		}
+		// range
+		parts := strings.Split(r, "-")
+		if len(parts) != 2 {
+			return nil, errors.Errorf("invalid port range %s format", r)
+		}
+		from, err := conv(parts[0])
+		if err != nil {
+			return nil, err
+		}
+		to, err := conv(parts[1])
+		if err != nil {
+			return nil, err
+		}
+		for i := from; i <= to; i++ {
+			ports = append(ports, i)
+		}
+	}
+	return ports, nil
+}
+
+func getExcludes(blacklist string) ([]string, error) {
+	if blacklist == "" {
+		return readCIDR(strings.NewReader(defaultBlacklist))
+	}
+	return readCIDRFile(blacklist)
+}
+
+func getCIDRs(path string, subnet string) ([]string, error) {
+	if subnet != "" {
+		return []string{subnet}, nil
+	}
+	return readCIDRFile(path)
+}
+
+func readCIDRFile(path string) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return readCIDR(f)
 }
 
 func main() {
-	var rLimit syscall.Rlimit
-	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit); err != nil {
-		log.Fatal(err)
+	_, err := flags.Parse(&opts)
+	if err != nil {
+		os.Exit(1)
 	}
-	rLimit.Cur = rLimit.Max
-	if runtime.GOOS == "darwin" && rLimit.Cur > 10240 {
-		// The max file limit is 10240, even though
-		// the max returned by Getrlimit is 1<<63-1.
-		// This is OPEN_MAX in sys/syslimits.h.
-		rLimit.Cur = 10240
+	if opts.Cidrs == "" && opts.Subnet == "" {
+		println("Either subnet or file with subnets to scan must be defined. See the -h")
+		os.Exit(1)
+	}
+	ports, err := parsePorts(opts.Ports)
+	if err != nil {
+		log.Fatal("failed to parse ports for scanning: ", err)
+	}
+	excludes, err := getExcludes(opts.BlackList)
+	if err != nil {
+		log.Fatal("failed to read the file with excludes: ", err)
+	}
+	ips, err := getCIDRs(opts.Cidrs, opts.Subnet)
+	if err != nil {
+		log.Fatal("failed to read the file with subnets for scanning: ", err)
 	}
 
-	if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit); err != nil {
-		log.Fatal(err)
+	gen, err := gen.NewGenerator(ips, excludes)
+	if err != nil {
+		log.Fatal("failed to init the tool with provided subnets: ", err)
 	}
-	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit); err != nil {
-		log.Fatal(err)
+	l := limiter.NewLogLimiter(opts.Rate)
+	r, err := router.New()
+	if err != nil {
+		log.Fatal("failed to init routing subsystem: ", err)
 	}
-	log.Infof("Current fd limit: %d", rLimit.Cur)
-
-	c := readConfig()
-
-	ips, err := readCIDR(c.CDIRfile)
+	s, err := scan.NewScanner(net.IPv4(1, 1, 1, 1), r)
 	if err != nil {
 		log.Fatal(err)
 	}
-	s5 := check.Checker(&check.Socks5Checker{})
-	pool := check.NewPoolChecker(s5, gen.NewGenerator(ips), &c)
+	ctx, cancel := context.WithCancel(context.Background())
+	sigs := make(chan os.Signal)
+	done := make(chan struct{})
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	for proxy := range pool.Start(context.Background()) {
-		log.Info(proxy)
-	}
+	go func() {
+		<-sigs
+		cancel()
+		close(done)
+	}()
+	c := NewConductor(gen.Ips(ctx), ports, s.Packets(ctx), s, l, func() ConnectionState {
+		return &banner.Socks5{}
+	})
+	go func() {
+		_ = c.Transmit(ctx)
+		cancel()
+		close(done)
+	}()
+	c.Collect()
+	<-done
 }
