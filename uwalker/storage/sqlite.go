@@ -29,7 +29,7 @@ type Sqlite struct {
 func NewSqlite(path string) (*Sqlite, error) {
 	db, err := sql.Open("sqlite3", path)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to open the Sqlite db file")
+		return nil, errors.Wrap(err, "failed to open the sqlite db file")
 	}
 	return &Sqlite{db: db}, nil
 }
@@ -43,7 +43,7 @@ func (s *Sqlite) prepare() error {
 }
 
 func (s *Sqlite) SaveBanner(ip net.IP, port uint16, proto string) error {
-	_, err := s.db.Exec(addStmt, ip.String(), port, proto, time.Now().Second())
+	_, err := s.db.Exec(addStmt, ip.String(), port, proto, time.Now().Unix())
 	if err != nil {
 		return errors.Wrap(err, "failed to insert new data")
 	}

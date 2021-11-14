@@ -19,12 +19,12 @@ type Store struct {
 	engine Engine
 }
 
-func NewStore(engine Engine) error {
+func NewStore(engine Engine) (*Store, error) {
 	err := engine.prepare()
 	if err != nil {
-		return errors.Wrap(err, "error initializing the store")
+		return nil, errors.Wrap(err, "error initializing the store")
 	}
-	return nil
+	return &Store{engine}, nil
 }
 
 func (s *Store) PersistBanner(ip net.IP, port uint16, proto string) error {

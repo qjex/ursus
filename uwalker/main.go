@@ -19,6 +19,7 @@ import (
 	"uwalker/limiter"
 	"uwalker/router"
 	"uwalker/scan"
+	"uwalker/storage"
 )
 
 //go:embed static/excludes
@@ -40,6 +41,7 @@ var opts struct {
 	Ports     string `short:"p" description:"Ports to scan, e.g comma separated \"2055,2056,1999\" or ranges \"2055-2059,1999\"" required:"true"`
 	BlackList string `short:"b" description:"Specifies file with excluded subnets from scanning in the same format as the subnets for scanning. If it is not specified, the default one would be used"`
 	Rate      uint32 `short:"r" description:"Max probing rate in packet/s" default:"100"`
+	Sqlite    string `long:"sqlite" description:"Path to the SQLite database" default:"db.sqlite"`
 }
 
 func parsePorts(p string) ([]uint16, error) {
@@ -140,24 +142,39 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	engine, err := storage.NewSqlite(opts.Sqlite)
+	if err != nil {
+		log.Fatal(err)
+	}
+	store, err := storage.NewStore(engine)
+	if err != nil {
+		log.Fatal("failed to init the store: ", err)
+	}
+	c := NewConductor(ports, s, l, func() ConnectionState {
+		return &banner.Socks5{}
+	})
+
 	ctx, cancel := context.WithCancel(context.Background())
 	sigs := make(chan os.Signal)
-	done := make(chan struct{})
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
 		<-sigs
 		cancel()
-		close(done)
 	}()
-	c := NewConductor(gen.Ips(ctx), ports, s.Packets(ctx), s, l, func() ConnectionState {
-		return &banner.Socks5{}
-	})
+	established := c.Collect(s.Packets(ctx))
 	go func() {
-		_ = c.Transmit(ctx)
+		_ = c.Transmit(gen.Ips(ctx))
 		cancel()
-		close(done)
 	}()
-	c.Collect()
-	<-done
+	persist(store, established)
+}
+
+func persist(store *storage.Store, established <-chan Protocol) {
+	for e := range established {
+		log.Printf("protocol %s detected at the %s:%d", e.Proto, e.Ip.String(), e.Port)
+		if err := store.PersistBanner(e.Ip, e.Port, e.Proto); err != nil {
+			log.Println("failed to persist the banner")
+		}
+	}
 }

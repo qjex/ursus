@@ -208,7 +208,7 @@ func (s *scanner) Packets(ctx context.Context) <-chan *Packet {
 				}
 			}
 		}
-		log.Println("scanner closed")
+		log.Println("receiver closed")
 		close(out)
 	}()
 	return out

@@ -17,3 +17,7 @@ func (s *Socks5) Read(data []byte) ([]byte, int, bool) {
 func (s *Socks5) Init() []byte {
 	return socks5.NoAuthHeader
 }
+
+func (s *Socks5) Proto() string {
+	return "socks5"
+}
