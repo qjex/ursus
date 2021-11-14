@@ -38,9 +38,9 @@ var opts struct {
 	TestHost  string `long:"test-host" default:"google.com:80"`
 	Subnet    string `short:"s" description:"Subnet to scan, e.g 192.168.0.1/24"`
 	Cidrs     string `short:"f" description:"File with subnets to scan"`
-	Ports     string `short:"p" description:"Ports to scan, e.g comma separated \"2055,2056,1999\" or ranges \"2055-2059,1999\"" required:"true"`
+	Ports     string `short:"p" env:"PROBE_PORTS" description:"Ports to scan, e.g comma separated \"2055,2056,1999\" or ranges \"2055-2059,1999\"" required:"true"`
 	BlackList string `short:"b" description:"Specifies file with excluded subnets from scanning in the same format as the subnets for scanning. If it is not specified, the default one would be used"`
-	Rate      uint32 `short:"r" description:"Max probing rate in packet/s" default:"100"`
+	Rate      uint32 `short:"r" env:"PROBE_RATE" description:"Max probing rate in packet/s" default:"100"`
 	Sqlite    string `long:"sqlite" description:"Path to the SQLite database" default:"db.sqlite"`
 }
 

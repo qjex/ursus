@@ -1,0 +1,1 @@
+RUN iptables -A INPUT -p tcp --dport 55324 -j DROP

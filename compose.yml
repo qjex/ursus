@@ -1,0 +1,19 @@
+version: "2"
+
+services:
+  uwalker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: qjex/uwalker
+    container_name: "uwalker"
+    hostname: "uwalker"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    network_mode: "host"
+    environment:
+      - PROBE_PORTS=4145,1080-1080
+      - PROBE_RATE=100
+    volumes:
+      - ./data:/srv/data
