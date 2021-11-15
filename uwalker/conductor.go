@@ -108,6 +108,8 @@ type txReq struct {
 	seq  uint32
 	ack  uint32
 
+	term bool
+
 	addr net.IP
 	port uint16
 }
@@ -134,6 +136,9 @@ loop:
 		select { // prioritize connections handling over connection init
 		case req := <-c.txQ:
 			c.send(func() error {
+				if req.term {
+					return c.s.Terminate(req.addr, req.port, req.seq)
+				}
 				return c.s.ProbeData(req.addr, req.port, req.seq, req.ack, req.data)
 			})
 			continue
@@ -177,7 +182,7 @@ func (c *Conductor) send(sender func() error) {
 
 func (c *Conductor) terminate(ip net.IP, seq uint32, k connectionKey) {
 	delete(c.connections, k)
-	_ = c.s.Terminate(ip, k.port, seq)
+	c.txQ <- &txReq{seq: seq, term: true, addr: ip, port: k.port}
 }
 
 func (c *Conductor) newConnection(k connectionKey, partySeq uint32) *connection {
@@ -293,5 +298,6 @@ func (c *connection) toRes(p *scan.Packet) *txReq {
 		port: p.Port,
 		ack:  c.partyNextSeq,
 		seq:  c.seq,
+		term: false,
 	}
 }
